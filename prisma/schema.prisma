@@ -1,0 +1,702 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+
+// ================= ENUMS =================
+
+enum UserRole {
+  TALENT
+  RECRUITER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum JobStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  UNDER_REVIEW
+  SHORTLISTED
+  SELECTED
+  REJECTED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  VIDEO_LINK
+  ACTING_VIDEO
+  CASTING_VIDEO
+  AUDIO
+}
+
+enum ContractStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  RENEWED
+}
+
+// ================= CORE USER =================
+
+model User {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  username          String   @unique
+  password          String
+  phone             String?
+  whatsappNo        String?
+  role              UserRole
+  status            UserStatus @default(ACTIVE)
+  isEmailVerified   Boolean  @default(false)
+  isVerified        Boolean  @default(false) // admin-verified talent badge
+  profileCompleted  Boolean  @default(false)
+  image             String?
+  website           String?
+
+  firstName         String?
+  middleName        String?
+  lastName          String?
+
+  nationalityId     String?
+  nationality       Nationality? @relation(fields: [nationalityId], references: [id])
+  cityId            String?
+  city              City? @relation(fields: [cityId], references: [id])
+
+  views             Int @default(0)
+
+  // Auth
+  otp               String?
+  otpCreatedAt      DateTime?
+  resetPassKey      String?
+  resetPassKeyCreatedAt DateTime?
+
+  // Relations
+  talentProfile     TalentProfile?
+  companyProfile    CompanyProfile?
+  applications      Application[]
+  castBags          CastBag[]
+  favourites        CompanyFavourite[]
+  googleOauth       GoogleOAuth?
+
+  emailVerifyToken          String?
+  emailVerifyTokenCreatedAt DateTime?
+  
+ castBagTalentOf       CastBagTalent[] @relation("CastBagTalentOf")
+  castBagFeedbackOf     CastBagFeedback[] @relation("CastBagFeedbackOf")
+  contractUsageTalentOf ContractUsageTalent[] @relation("ContractUsageTalentOf")
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("users")
+}
+
+model GoogleOAuth {
+  id        String @id @default(uuid())
+  userId    String @unique
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleId  String
+  createdAt DateTime @default(now())
+
+  @@map("google_oauth")
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admins")
+}
+
+// ================= TALENT PROFILE =================
+
+model TalentProfile {
+  id              String  @id @default(uuid())
+  userId          String  @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  description     String?
+  gender          String?
+  dob             DateTime?
+  age             Int?
+
+  // Physical attributes
+  hairColor       String?
+  hairType        String?
+  hairLength      String?
+  eyeColor        String?
+  height          String?
+  weight          String?
+  chest           String?
+  waist           String?
+  shoeSize        String?
+  bodyStructure   String?
+  tattoo          String?
+  tattooComment   String?
+
+  ethnicityId     String?
+  ethnicity       Ethnicity? @relation(fields: [ethnicityId], references: [id])
+
+  address         String?
+  cityId          String?
+  city            City? @relation(fields: [cityId], references: [id])
+  experience      Int?
+
+  bioDescription  String?
+  skillDescription String?
+
+  // Social
+  facebook        String?
+  twitter         String?
+  linkedin        String?
+  googleProfile   String?
+
+  // Visibility-controlled fields
+  whatsappNo      String?
+  contactNumber   String?  // visible only to "Our Company" internal accounts
+  contactEmail    String?  // visible only to "Our Company" internal accounts
+
+  castingVideo    String?
+  views           Int @default(0)
+
+  // Relations
+  categories      TalentCategory[]
+  languages       TalentLanguage[]
+  dialects        TalentDialect[]
+  attributes      ProfileAttribute[]   // dynamic category-specific fields
+  media           PortfolioMedia[]
+  careerHistory   CareerHistory[]
+  courses         TalentCourse[]
+  likes           ProfileLike[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("talent_profiles")
+}
+
+// Dynamic category-specific attributes (replaces 20+ fixed columns)
+model ProfileAttribute {
+  id              String  @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+
+  categoryId      String
+  category        Category @relation(fields: [categoryId], references: [id])
+
+  key             String   // e.g., "style_of_dance", "individual_or_band", "camera_worked_on"
+  value           String
+
+  @@index([talentProfileId, categoryId])
+  @@map("profile_attributes")
+}
+
+model PortfolioMedia {
+  id              String  @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+
+  type            MediaType
+  url             String?      // R2 URL for uploaded files
+  videoLink       String?      // YouTube/Vimeo link
+  title           String?      // Title for videos and audio
+  caption         String?
+  order           Int @default(0)
+  folder          String?      // which R2 folder
+
+  createdAt       DateTime @default(now())
+
+  @@map("portfolio_media")
+}
+
+model CareerHistory {
+  id              String  @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+
+  title           String
+  description     String?
+  startDate       DateTime?
+  endDate         DateTime?
+
+  @@map("career_history")
+}
+
+model TalentCourse {
+  id              String  @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+  title           String
+  institution     String?
+  year            Int?
+
+  @@map("talent_courses")
+}
+
+model ProfileLike {
+  id              String @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+  likedByUserId   String
+
+  createdAt       DateTime @default(now())
+
+  @@unique([talentProfileId, likedByUserId])
+  @@map("profile_likes")
+}
+
+// ================= COMPANY PROFILE =================
+
+model CompanyProfile {
+  id              String  @id @default(uuid())
+  userId          String  @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  companyName     String
+  contactPerson   String?
+
+  isInternalCompany Boolean @default(false) // "Our Company" flag for contact visibility rule
+
+  jobs            Job[]
+  favourites      CompanyFavourite[]
+  contractUsages  ContractUsage[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("company_profiles")
+}
+
+model CompanyFavourite {
+  id              String @id @default(uuid())
+  companyId       String
+  company         CompanyProfile @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  talentUserId    String
+  talent          User @relation(fields: [talentUserId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime @default(now())
+
+  @@unique([companyId, talentUserId])
+  @@map("company_favourites")
+}
+
+// ================= JOBS & ROLES =================
+
+model Job {
+  id              String  @id @default(uuid())
+  companyId       String
+  company         CompanyProfile @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  title           String
+  subTitle        String?
+  description     String?
+  service         String?
+
+  categoryId      String?
+  category        Category? @relation(fields: [categoryId], references: [id])
+  subCategoryId   String?
+  subCategory     SubCategory? @relation(fields: [subCategoryId], references: [id])
+  projectTypeId   String?
+  projectType     ProjectType? @relation(fields: [projectTypeId], references: [id])
+
+  cityId          String?
+  city            City? @relation(fields: [cityId], references: [id])
+  shootingCityId  String?
+  shootingCity    City? @relation("ShootingCity", fields: [shootingCityId], references: [id])
+
+  totalCastRequired Int?
+  ageMin          Int?
+  ageMax          Int?
+  gender          String?
+  shootingDate    DateTime?
+  expiryDate      DateTime?
+  usage           String?
+  image           String?
+  paymentInfo     String?  // visibility restricted - Talent-only
+
+  status          JobStatus @default(PENDING)
+  views           Int @default(0)
+
+  roles           Role[]
+  contractUsages  ContractUsage[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("jobs")
+}
+
+model Role {
+  id                String @id @default(uuid())
+  jobId             String
+  job               Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  title             String
+  description       String?
+  noOfCast          Int?
+payment   RolePayment?
+  ethnicity         String?
+  ethnicityAll      Boolean @default(false)
+  nationality       String?
+  nationalityAll    Boolean @default(false)
+  languageSpoken    String?
+  dialectsSpoken    String?
+  gender            String?
+  ageMin            Int?
+  ageMax            Int?
+  experience        String?
+  experienceAll     Boolean @default(false)
+
+  paymentInfo       String?  // Talent-only visibility
+  paymentType       String?
+  usage             String?
+  location          String?
+  country           String?
+
+  requiredProfileVideo  Boolean @default(false)
+  requiredCastingVideo  Boolean @default(false)
+
+  applications      Application[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model RolePayment {
+  id        String @id @default(uuid())
+  roleId    String @unique
+  role      Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  // Hourly
+  hourPerDay          Int?
+  hourBudgetPerHour   Int?
+  hourNoOfDays        Int?
+  hourCommission      Int?
+  hourTalentBudget    Int?
+  hourProfit          Int?
+
+  // Daily
+  dayFullDay          Int?
+  dayHalfDay          Int?
+  dayBudgetFullDay    Int?
+  dayBudgetHalfDay    Int?
+  dayTotalBudget      Int?
+  dayCommission       Int?
+  dayTalentFullDay    Int?
+  dayTalentHalfDay    Int?
+  dayTalentTotal      Int?
+  dayTotalProfit      Int?
+
+  // Weekly
+  weekNoOfWeek        Int?
+  weekDaysPerWeek     Int?
+  weekBudgetPerWeek   Int?
+  weekCommission      Int?
+  weekTalentBudget    Int?
+  weekProfit          Int?
+
+  // Monthly
+  monthNoOfMonth      Int?
+  monthDayPerMonth    Int?
+  monthBudgetPerMonth Int?
+  monthCommission     Int?
+  monthTalentBudget   Int?
+  monthProfit         Int?
+
+  // Package
+  packageBudgetFullDay  Int?
+  packageBudgetHalfDay  Int?
+  packageTotalBudget    Int?
+  packageCommission     Int?
+  packageTotalTalent    Int?
+  packageProfit         Int?
+
+  status    Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("role_payments")
+}
+
+// ================= APPLICATIONS =================
+
+model Application {
+  id              String @id @default(uuid())
+  userId          String
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId          String
+  role            Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  status          ApplicationStatus @default(APPLIED)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, roleId])
+  @@map("applications")
+}
+
+// ================= CAST BAG (Enhanced) =================
+
+model CastBag {
+  id              String @id @default(uuid())
+  ownerId         String
+  owner           User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  name            String
+  description     String?
+
+  talents         CastBagTalent[]
+  links           CastBagLink[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("cast_bags")
+}
+
+model CastBagTalent {
+  id              String @id @default(uuid())
+  castBagId       String
+  castBag         CastBag @relation(fields: [castBagId], references: [id], onDelete: Cascade)
+  talentUserId    String
+  talent          User @relation("CastBagTalentOf", fields: [talentUserId], references: [id], onDelete: Cascade)
+
+  addedAt         DateTime @default(now())
+
+  @@unique([castBagId, talentUserId])
+  @@map("cast_bag_talents")
+}
+
+model CastBagLink {
+  id              String @id @default(uuid())
+  castBagId       String
+  castBag         CastBag @relation(fields: [castBagId], references: [id], onDelete: Cascade)
+
+  token           String  @unique  // unique shareable URL slug
+  email           String?          // who it was shared with (optional)
+  status          Boolean @default(true)
+  expiresAt       DateTime?
+
+  feedback        CastBagFeedback[]
+
+  createdAt       DateTime @default(now())
+
+  @@map("cast_bag_links")
+}
+
+// NEW: Feedback system
+model CastBagFeedback {
+  id              String @id @default(uuid())
+  linkId          String
+  link            CastBagLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  talentUserId    String   // which talent profile the feedback is about
+ talent          User @relation("CastBagFeedbackOf", fields: [talentUserId], references: [id], onDelete: Cascade)
+
+  reviewerName    String?
+  reviewerEmail   String?
+  comment         String?
+  rating          Int?     // optional rating
+
+  createdAt       DateTime @default(now())
+
+  @@map("cast_bag_feedback")
+}
+
+// ================= CONTRACT / USAGE TRACKING (NEW) =================
+
+model ContractUsage {
+  id              String @id @default(uuid())
+  jobId           String
+  job             Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  companyId       String
+  company         CompanyProfile @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  talents         ContractUsageTalent[]
+
+  projectName     String?
+  contractStart   DateTime
+  contractExpiry  DateTime
+  usageDuration   String?
+
+  status          ContractStatus @default(ACTIVE)
+  renewalNotes    String?
+  renewalHistory  RenewalHistory[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("contract_usages")
+}
+
+model ContractUsageTalent {
+  id              String @id @default(uuid())
+  contractUsageId String
+  contractUsage   ContractUsage @relation(fields: [contractUsageId], references: [id], onDelete: Cascade)
+  talentUserId    String
+  talent          User @relation("ContractUsageTalentOf", fields: [talentUserId], references: [id], onDelete: Cascade)
+
+  @@unique([contractUsageId, talentUserId])
+  @@map("contract_usage_talents")
+}
+
+model RenewalHistory {
+  id              String @id @default(uuid())
+  contractUsageId String
+  contractUsage   ContractUsage @relation(fields: [contractUsageId], references: [id], onDelete: Cascade)
+
+  oldExpiryDate   DateTime
+  newExpiryDate   DateTime
+  remarks         String?
+
+  createdAt       DateTime @default(now())
+
+  @@map("renewal_history")
+}
+
+// ================= LOOKUP / REFERENCE TABLES =================
+
+model Category {
+  id          String @id @default(uuid())
+  name        String @unique
+  subCategories SubCategory[]
+  jobs        Job[]
+  profileAttributes ProfileAttribute[]
+  talentCategories TalentCategory[]
+
+  @@map("categories")
+}
+
+model SubCategory {
+  id          String @id @default(uuid())
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  name        String
+  jobs        Job[]
+
+  @@map("sub_categories")
+}
+
+model TalentCategory {
+  id              String @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([talentProfileId, categoryId])
+  @@map("talent_categories")
+}
+
+model ProjectType {
+  id    String @id @default(uuid())
+  name  String @unique
+  jobs  Job[]
+
+  @@map("project_types")
+}
+
+model City {
+  id        String @id @default(uuid())
+  name      String
+  countryId String?
+  country   Country? @relation(fields: [countryId], references: [id])
+
+  usersResidence  User[]
+  talentResidence TalentProfile[]
+  jobsLocation    Job[] @relation
+  jobsShooting    Job[] @relation("ShootingCity")
+
+  @@map("cities")
+}
+
+model Country {
+  id    String @id @default(uuid())
+  name  String @unique
+  cities City[]
+
+  @@map("countries")
+}
+
+model Nationality {
+  id    String @id @default(uuid())
+  name  String @unique
+  users User[]
+
+  @@map("nationalities")
+}
+
+model Ethnicity {
+  id    String @id @default(uuid())
+  name  String @unique
+  talentProfiles TalentProfile[]
+
+  @@map("ethnicities")
+}
+
+model Language {
+  id    String @id @default(uuid())
+  name  String @unique
+  talents TalentLanguage[]
+
+  @@map("languages")
+}
+
+model TalentLanguage {
+  id              String @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+  languageId      String
+  language        Language @relation(fields: [languageId], references: [id])
+
+  @@unique([talentProfileId, languageId])
+  @@map("talent_languages")
+}
+
+model Dialect {
+  id    String @id @default(uuid())
+  name  String @unique
+  talents TalentDialect[]
+
+  @@map("dialects")
+}
+
+model TalentDialect {
+  id              String @id @default(uuid())
+  talentProfileId String
+  talentProfile   TalentProfile @relation(fields: [talentProfileId], references: [id], onDelete: Cascade)
+  dialectId       String
+  dialect         Dialect @relation(fields: [dialectId], references: [id])
+
+  @@unique([talentProfileId, dialectId])
+  @@map("talent_dialects")
+}
