@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -57,6 +55,12 @@ enum ContractStatus {
   RENEWED
 }
 
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
 // ================= CORE USER =================
 
 model User {
@@ -76,7 +80,7 @@ model User {
 
   firstName         String?
   middleName        String?
-  lastName          String?
+  lastName         String?
 
   nationalityId     String?
   nationality       Nationality? @relation(fields: [nationalityId], references: [id])
@@ -98,11 +102,12 @@ model User {
   castBags          CastBag[]
   favourites        CompanyFavourite[]
   googleOauth       GoogleOAuth?
+  subscription      UserSubscription?
 
   emailVerifyToken          String?
   emailVerifyTokenCreatedAt DateTime?
   
- castBagTalentOf       CastBagTalent[] @relation("CastBagTalentOf")
+  castBagTalentOf       CastBagTalent[] @relation("CastBagTalentOf")
   castBagFeedbackOf     CastBagFeedback[] @relation("CastBagFeedbackOf")
   contractUsageTalentOf ContractUsageTalent[] @relation("ContractUsageTalentOf")
 
@@ -359,7 +364,7 @@ model Role {
   title             String
   description       String?
   noOfCast          Int?
-payment   RolePayment?
+  payment           RolePayment?
   ethnicity         String?
   ethnicityAll      Boolean @default(false)
   nationality       String?
@@ -519,7 +524,7 @@ model CastBagFeedback {
   link            CastBagLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
 
   talentUserId    String   // which talent profile the feedback is about
- talent          User @relation("CastBagFeedbackOf", fields: [talentUserId], references: [id], onDelete: Cascade)
+  talent          User @relation("CastBagFeedbackOf", fields: [talentUserId], references: [id], onDelete: Cascade)
 
   reviewerName    String?
   reviewerEmail   String?
@@ -699,4 +704,36 @@ model TalentDialect {
 
   @@unique([talentProfileId, dialectId])
   @@map("talent_dialects")
+}
+
+// ================= SUBSCRIPTION PLACEHOLDER =================
+
+model Plan {
+  id              String   @id @default(uuid())
+  name            String   @unique 
+  slug            String   @unique 
+  price           Float    @default(0)
+  maxPhotos       Int      @default(8)
+  maxVideos       Int      @default(3)
+  maxAudios       Int      @default(1)
+  maxJobsPerMonth Int      @default(1) // 999 = Unlimited
+  priority        Int      @default(0) // 0 = Last, 1 = Middle, 2 = Top
+
+  subscriptions   UserSubscription[]
+
+  @@map("plans")
+}
+
+model UserSubscription {
+  id              String             @id @default(uuid())
+  userId          String             @unique // One active subscription per user
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId          String
+  plan            Plan               @relation(fields: [planId], references: [id])
+  status          SubscriptionStatus @default(ACTIVE)
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("user_subscriptions")
 }

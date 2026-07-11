@@ -9,10 +9,11 @@ interface GetPublicProfileParams {
 export const getPublicProfile = async (params: GetPublicProfileParams) => {
   const { username, viewerUserId, viewerRole } = params;
 
-  // 1. Find user by username (public route uses username, not ID)
+  // 1. Find user by username
   const user = await prisma.user.findUnique({
     where: { username },
     include: {
+      subscription: { include: { plan: true } },
       talentProfile: {
         include: {
           categories: { include: { category: true } },
@@ -34,29 +35,23 @@ export const getPublicProfile = async (params: GetPublicProfileParams) => {
     throw { statusCode: 404, message: 'Talent profile not found' };
   }
 
-  // 2. Increment views atomically
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: user.id },
-      data: { views: { increment: 1 } }
-    }),
-    prisma.talentProfile.update({
-      where: { userId: user.id },
-      data: { views: { increment: 1 } }
-    })
-  ]);
+  // 2. Increment views — TalentProfile is the only model that has this field
+  const updatedProfile = await prisma.talentProfile.update({
+    where: { userId: user.id },
+    data: { views: { increment: 1 } },
+    select: { views: true }, // grab the authoritative post-increment count
+  });
 
-  // 3. THE VISIBILITY RULE: Internal Company Check
+  // 3. Internal Company visibility check
   let showContacts = false;
   if (viewerRole === 'RECRUITER' && viewerUserId) {
     const recruiterCompany = await prisma.companyProfile.findFirst({
       where: { userId: viewerUserId }
     });
-    // Only show if explicitly flagged as "Our Company"
     showContacts = recruiterCompany?.isInternalCompany === true;
   }
 
-  // 4. Construct safe response (Strip hidden fields if not allowed)
+  // 4. Construct safe response
   const R2_BASE = process.env.R2_PUBLIC_URL;
   const safeUser = {
     id: user.id,
@@ -66,11 +61,11 @@ export const getPublicProfile = async (params: GetPublicProfileParams) => {
     lastName: user.lastName,
     image: user.image ? `${R2_BASE}/profile/${user.image}` : null,
     isVerified: user.isVerified,
-    views: (user.views || 0) + 1, // Return the newly incremented count
     nationality: user.nationality,
+    subscription: user.subscription,
     talentProfile: {
       ...user.talentProfile,
-      // Apply the Internal Company visibility rule
+      views: updatedProfile.views, // correct, updated count
       ...(showContacts ? {
         whatsappNo: user.talentProfile.whatsappNo,
         contactNumber: user.talentProfile.contactNumber,
