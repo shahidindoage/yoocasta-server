@@ -15,8 +15,17 @@ interface SearchParams {
   nationalities?: string[];
   languages?: string[];
   dialects?: string[];
-  physical?: Record<string, string>;
-  professional?: { key: string; value: string }[];
+  
+  professional?: { key: string; values: string[] }[];
+  physical?: {
+    heightFrom?: number; heightTo?: number;
+    weightFrom?: number; weightTo?: number;
+    chestFrom?: number; chestTo?: number;
+    waistFrom?: number; waistTo?: number;
+    shoeSizeFrom?: number; shoeSizeTo?: number;
+    hairColor?: string; hairType?: string; hairLength?: string;
+    eyeColor?: string; bodyStructure?: string; tattoo?: string;
+  };
 }
 
 const calculateAge = (dob: Date | null | undefined): number | null => {
@@ -39,11 +48,9 @@ export const searchTalents = async (params: SearchParams) => {
     profileCompleted: true,
   };
 
-  // Everything that filters fields ON talentProfile goes in here,
-  // then gets wrapped under `is` at the very end.
   const profileConditions: any = {};
 
-  // 1. Text Search (Name or Bio)
+  // 1. Text Search
   if (params.search) {
     where.OR = [
       { firstName: { contains: params.search, mode: 'insensitive' } },
@@ -69,7 +76,7 @@ export const searchTalents = async (params: SearchParams) => {
   // 3. Demographics
   if (params.gender) profileConditions.gender = params.gender;
   if (params.ethnicities?.length) profileConditions.ethnicityId = { in: params.ethnicities };
-  if (params.nationalities?.length) where.nationalityId = { in: params.nationalities }; // direct User field, fine as-is
+  if (params.nationalities?.length) where.nationalityId = { in: params.nationalities };
   if (params.languages?.length) profileConditions.languages = { some: { languageId: { in: params.languages } } };
   if (params.dialects?.length) profileConditions.dialects = { some: { dialectId: { in: params.dialects } } };
 
@@ -80,8 +87,8 @@ export const searchTalents = async (params: SearchParams) => {
   // 5. Age -> DOB range
   if (params.ageFrom || params.ageTo) {
     const today = new Date();
-    let minDob: Date | null = null; // latest birthdate allowed (youngest / ageFrom)
-    let maxDob: Date | null = null; // earliest birthdate allowed (oldest / ageTo)
+    let minDob: Date | null = null;
+    let maxDob: Date | null = null;
 
     if (params.ageTo) maxDob = new Date(today.getFullYear() - params.ageTo, today.getMonth(), today.getDate());
     if (params.ageFrom) minDob = new Date(today.getFullYear() - params.ageFrom, today.getMonth(), today.getDate());
@@ -93,17 +100,58 @@ export const searchTalents = async (params: SearchParams) => {
   }
 
   // 6. Physical Filters
+  let physicalNumericUserIds: string[] | null = null;
+
   if (params.physical) {
-    Object.entries(params.physical).forEach(([key, value]) => {
-      if (value) profileConditions[key] = value;
-    });
+    const { hairColor, hairType, hairLength, eyeColor, bodyStructure, tattoo, ...ranges } = params.physical;
+
+    // categorical — exact match
+    if (hairColor) profileConditions.hairColor = hairColor;
+    if (hairType) profileConditions.hairType = hairType;
+    if (hairLength) profileConditions.hairLength = hairLength;
+    if (eyeColor) profileConditions.eyeColor = eyeColor;
+    if (bodyStructure) profileConditions.bodyStructure = bodyStructure;
+    if (tattoo) profileConditions.tattoo = tattoo;
+
+    // numeric ranges — raw SQL since these columns are stored as text
+    const rangeConditions: string[] = [];
+    const rangeParams: any[] = [];
+
+    const addRange = (column: string, from?: number, to?: number) => {
+      if (from == null && to == null) return;
+      let clause = `("${column}" ~ '^[0-9.]+$' AND CAST("${column}" AS FLOAT)`;
+      const parts: string[] = [];
+      if (from != null) { parts.push(`>= $${rangeParams.length + 1}`); rangeParams.push(from); }
+      if (to != null) { parts.push(`<= $${rangeParams.length + 1}`); rangeParams.push(to); }
+      clause += ' ' + parts.join(' AND CAST("' + column + '" AS FLOAT) ') + ')';
+      rangeConditions.push(clause);
+    };
+
+    addRange('height', ranges.heightFrom, ranges.heightTo);
+    addRange('weight', ranges.weightFrom, ranges.weightTo);
+    addRange('chest', ranges.chestFrom, ranges.chestTo);
+    addRange('waist', ranges.waistFrom, ranges.waistTo);
+    addRange('shoeSize', ranges.shoeSizeFrom, ranges.shoeSizeTo);
+
+    if (rangeConditions.length) {
+      const sql = `SELECT "userId" FROM talent_profiles WHERE ${rangeConditions.join(' AND ')}`;
+      const rows: { userId: string }[] = await prisma.$queryRawUnsafe(sql, ...rangeParams);
+      physicalNumericUserIds = rows.map(r => r.userId);
+    }
   }
 
-  // 7. Professional/EAV Filters (AND across all selected key/value pairs)
+  // 7. Professional/EAV Filters
   if (params.professional?.length) {
-    profileConditions.AND = params.professional.map(p => ({
-      attributes: { some: { key: p.key, value: p.value } },
-    }));
+    profileConditions.AND = params.professional
+      .filter(p => p.values?.length)
+      .map(p => ({
+        attributes: {
+          some: {
+            key: p.key,
+            OR: p.values.map(v => ({ value: { contains: v, mode: 'insensitive' } })),
+          },
+        },
+      }));
   }
 
   // Finally, attach the relation filter correctly
@@ -112,11 +160,16 @@ export const searchTalents = async (params: SearchParams) => {
     ...(Object.keys(profileConditions).length ? { is: profileConditions } : {}),
   };
 
+  // Apply numeric physical range filter (computed via raw SQL above) directly on User.id
+  if (physicalNumericUserIds) {
+    where.id = { in: physicalNumericUserIds };
+  }
+
   // 8. Sorting
   let orderBy: any = { createdAt: 'desc' };
-  if (params.sort === 'a-z') orderBy = { firstName: 'asc' };
-  if (params.sort === 'z-a') orderBy = { firstName: 'desc' };
-  if (params.sort === 'most_viewed') orderBy = { views: 'desc' };
+if (params.sort === 'a-z') orderBy = { firstName: 'desc' };
+if (params.sort === 'z-a') orderBy = { firstName: 'asc' };
+if (params.sort === 'most_viewed') orderBy = { talentProfile: { views: 'desc' } };
 
   const [talents, total] = await Promise.all([
     prisma.user.findMany({
@@ -127,7 +180,6 @@ export const searchTalents = async (params: SearchParams) => {
         firstName: true,
         lastName: true,
         image: true,
-        // views: true,
         isVerified: true,
         talentProfile: {
           select: {
@@ -136,7 +188,10 @@ export const searchTalents = async (params: SearchParams) => {
             ethnicity: { select: { name: true } },
             gender: true,
             dob: true,
-            views: true
+            views: true,
+            shoeSize: true,
+            hairColor: true,
+            waist: true,
           },
         },
       },
@@ -149,34 +204,49 @@ export const searchTalents = async (params: SearchParams) => {
 
   const R2_BASE = process.env.R2_PUBLIC_URL;
   const formattedTalents = talents.map(u => ({
-  id: u.id,
-  username: u.username,
-  firstName: u.firstName,
-  lastName: u.lastName,
-  image: u.image ? `${R2_BASE}/profile/${u.image}` : null,
-  isVerified: u.isVerified,
-  categories: u.talentProfile?.categories.map(c => c.category.name) || [],
-  city: u.talentProfile?.city?.name,
-  country: u.talentProfile?.city?.country?.name,
-  ethnicity: u.talentProfile?.ethnicity?.name,
-  gender: u.talentProfile?.gender,
-  age: calculateAge(u.talentProfile?.dob),
-  views: u.talentProfile?.views ?? 0, // <-- added
-}));
+    id: u.id,
+    username: u.username,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    image: u.image ? `${R2_BASE}/profile/${u.image}` : null,
+    isVerified: u.isVerified,
+    categories: u.talentProfile?.categories.map(c => c.category.name) || [],
+    city: u.talentProfile?.city?.name,
+    country: u.talentProfile?.city?.country?.name,
+    ethnicity: u.talentProfile?.ethnicity?.name,
+    gender: u.talentProfile?.gender,
+    age: calculateAge(u.talentProfile?.dob),
+    views: u.talentProfile?.views ?? 0,
+    physical: {
+      shoeSize: u.talentProfile?.shoeSize || null,
+      hairColor: u.talentProfile?.hairColor || null,
+      waist: u.talentProfile?.waist || null,
+    },
+  }));
 
   return {
     data: formattedTalents,
-    pagination: {
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
-    },
+    pagination: { total, page, totalPages: Math.ceil(total / limit) },
   };
 };
 
+// add this helper above getTalentFilterOptions
+function dedupePrefixChains(values: string[]): string[] {
+  const sorted = [...values].sort((a, b) => b.length - a.length); // longest first
+  const kept: string[] = [];
+  for (const v of sorted) {
+    const isPrefixOfKept = kept.some(k => k.startsWith(v));
+    if (!isPrefixOfKept) kept.push(v);
+  }
+  return kept.sort((a, b) => a.localeCompare(b));
+}
+
+const PHYSICAL_NUMERIC_FIELDS = ['height', 'weight', 'chest', 'waist', 'shoeSize'] as const;
+const PHYSICAL_CATEGORICAL_FIELDS = ['hairColor', 'hairType', 'hairLength', 'eyeColor', 'bodyStructure', 'tattoo'] as const;
+
 // Fetch options for dropdowns
 export const getTalentFilterOptions = async () => {
-  const [categories, countries, cities, nationalities, ethnicities, languages, dialects, attributes] = await Promise.all([
+  const [categories, countries, cities, nationalities, ethnicities, languages, dialects, attributeRows, physicalRows] = await Promise.all([
     prisma.category.findMany({ orderBy: { name: 'asc' } }),
     prisma.country.findMany({ orderBy: { name: 'asc' } }),
     prisma.city.findMany({ orderBy: { name: 'asc' } }),
@@ -184,8 +254,59 @@ export const getTalentFilterOptions = async () => {
     prisma.ethnicity.findMany({ orderBy: { name: 'asc' } }),
     prisma.language.findMany({ orderBy: { name: 'asc' } }),
     prisma.dialect.findMany({ orderBy: { name: 'asc' } }),
-    prisma.profileAttribute.groupBy({ by: ['key'] }),
+    prisma.profileAttribute.findMany({ select: { key: true, value: true } }),
+    prisma.talentProfile.findMany({
+      select: {
+        height: true, weight: true, chest: true, waist: true, shoeSize: true,
+        hairColor: true, hairType: true, hairLength: true, eyeColor: true, bodyStructure: true, tattoo: true,
+      },
+    }),
   ]);
 
-  return { categories, countries, cities, nationalities, ethnicities, languages, dialects, attributes: attributes.map(a => a.key) };
+  const attributeValueSets: Record<string, Set<string>> = {};
+  for (const row of attributeRows) {
+    if (!row.value) continue;
+    const parts = row.value.split(',').map(v => v.trim()).filter(Boolean);
+    for (const part of parts) {
+      (attributeValueSets[row.key] ??= new Set()).add(part);
+    }
+  }
+
+  const attributeValues: Record<string, string[]> = {};
+  for (const [key, set] of Object.entries(attributeValueSets)) {
+    attributeValues[key] = dedupePrefixChains(Array.from(set)); // <-- added
+  }
+
+
+  // Numeric physical fields — dedupe, keep only valid numbers, sort ascending
+  const physicalNumeric: Record<string, number[]> = {};
+  for (const field of PHYSICAL_NUMERIC_FIELDS) {
+    const set = new Set<number>();
+    for (const row of physicalRows) {
+      const raw = (row as any)[field];
+      const num = raw != null ? parseFloat(raw) : NaN;
+      if (!isNaN(num)) set.add(num);
+    }
+    physicalNumeric[field] = Array.from(set).sort((a, b) => a - b);
+  }
+
+  // Categorical physical fields — dedupe, sort alphabetically
+  const physicalCategorical: Record<string, string[]> = {};
+  for (const field of PHYSICAL_CATEGORICAL_FIELDS) {
+    const set = new Set<string>();
+    for (const row of physicalRows) {
+      const val = (row as any)[field];
+      if (val) set.add(val);
+    }
+    physicalCategorical[field] = Array.from(set).sort((a, b) => a.localeCompare(b));
+  }
+
+
+  return {
+    categories, countries, cities, nationalities, ethnicities, languages, dialects,
+    attributes: Object.keys(attributeValues),
+    attributeValues,
+    physicalNumeric,
+    physicalCategorical,
+  };
 };
