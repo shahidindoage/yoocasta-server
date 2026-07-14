@@ -36,6 +36,8 @@ const calculateAge = (dob: Date | null | undefined): number | null => {
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
   return age;
 };
+// Fields where: 0 = not present, 1 = Individual, >1 = group (Band/Troupe)
+const INDIVIDUAL_OR_GROUP_KEYS = new Set(['singer_individual_or_band', 'dancer_individual_or_band']);
 
 export const searchTalents = async (params: SearchParams) => {
   const page = params.page || 1;
@@ -140,19 +142,36 @@ export const searchTalents = async (params: SearchParams) => {
     }
   }
 
-  // 7. Professional/EAV Filters
-  if (params.professional?.length) {
-    profileConditions.AND = params.professional
-      .filter(p => p.values?.length)
-      .map(p => ({
+  // 7. Professional/EAV Filters (AND across keys, OR within a key's selected tags)
+if (params.professional?.length) {
+  profileConditions.AND = params.professional
+    .filter(p => p.values?.length)
+    .map(p => {
+      // Special handling: Individual/Band coded fields
+     if (INDIVIDUAL_OR_GROUP_KEYS.has(p.key)) {
+  const wantsIndividual = p.values.some(v => v.toLowerCase() === 'individual');
+  const wantsGroup = p.values.some(v => ['band', 'troupe'].includes(v.toLowerCase()));
+
+  const orConditions: any[] = [];
+  if (wantsIndividual) orConditions.push({ value: '1' });
+  if (wantsGroup) orConditions.push({ value: { notIn: ['0', '1'] } });
+
+  return {
+    attributes: { some: { key: p.key, OR: orConditions } },
+  };
+}
+
+      // Default behavior for all other EAV fields
+      return {
         attributes: {
           some: {
             key: p.key,
             OR: p.values.map(v => ({ value: { contains: v, mode: 'insensitive' } })),
           },
         },
-      }));
-  }
+      };
+    });
+}
 
   // Finally, attach the relation filter correctly
   where.talentProfile = {

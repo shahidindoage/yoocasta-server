@@ -284,8 +284,15 @@ model CompanyProfile {
 
   companyName     String
   contactPerson   String?
+  description     String?       // ADDED
+  logo            String?       // ADDED (for future uploads)
+  website         String?       // ADDED
+  companyType     String?       // ADDED
 
-  isInternalCompany Boolean @default(false) // "Our Company" flag for contact visibility rule
+  isInternalCompany Boolean @default(false) 
+
+  tradeLicense        String?  // ADDED
+  tradeLicenseFile    String?  // ADDED (for future uploads)
 
   jobs            Job[]
   favourites      CompanyFavourite[]

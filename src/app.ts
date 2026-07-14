@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import authRoutes from './modules/auth/auth.routes';
 import profileRoutes from './modules/profile/profile.routes';
 import talentRoutes from './modules/talent/talent.routes';
+import recruiterRoute from './modules/recruiter/recruiter.route';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -39,6 +40,8 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/profile', profileRoutes);
 
 app.use('/api/v1/talents', talentRoutes);
+
+app.use('/api/v1/recruiter', recruiterRoute);
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
