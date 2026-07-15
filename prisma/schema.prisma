@@ -320,45 +320,54 @@ model CompanyFavourite {
 // ================= JOBS & ROLES =================
 
 model Job {
-  id              String  @id @default(uuid())
-  companyId       String
-  company         CompanyProfile @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id                String   @id @default(uuid())
+  companyId         String
+  company           CompanyProfile @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  title           String
-  subTitle        String?
-  description     String?
-  service         String?
+  castingService    String   @default("portal") // "manual" or "portal"
 
-  categoryId      String?
-  category        Category? @relation(fields: [categoryId], references: [id])
-  subCategoryId   String?
-  subCategory     SubCategory? @relation(fields: [subCategoryId], references: [id])
-  projectTypeId   String?
-  projectType     ProjectType? @relation(fields: [projectTypeId], references: [id])
+ isLegacy          Boolean  @default(false)
 
-  cityId          String?
-  city            City? @relation(fields: [cityId], references: [id])
-  shootingCityId  String?
-  shootingCity    City? @relation("ShootingCity", fields: [shootingCityId], references: [id])
+  title             String?
+  subTitle          String?
+  description       String?
+  service           String?
+
+  categoryId        String?
+  category          Category? @relation(fields: [categoryId], references: [id])
+  subCategoryId     String?
+  subCategory       SubCategory? @relation(fields: [subCategoryId], references: [id])
+  projectTypeId     String?
+  projectType       ProjectType? @relation(fields: [projectTypeId], references: [id])
+
+  // Casting Location
+  castingCityId     String?
+  castingCity       City? @relation("CastingCity", fields: [castingCityId], references: [id])
+  castingDates      String?  // JSON array of dates
+
+  // Shooting Location
+  shootingCityId    String?
+  shootingCity      City? @relation("ShootingCity", fields: [shootingCityId], references: [id])
+  shootingDates     String?  // JSON array of dates
+
+  lastDateToApply   DateTime?
+  usage             String?
+  image             String?
+  paymentInfo       String?  // "paid" or "unpaid"
 
   totalCastRequired Int?
-  ageMin          Int?
-  ageMax          Int?
-  gender          String?
-  shootingDate    DateTime?
-  expiryDate      DateTime?
-  usage           String?
-  image           String?
-  paymentInfo     String?  // visibility restricted - Talent-only
+  ageMin            Int?
+  ageMax            Int?
+  gender            String?
 
-  status          JobStatus @default(PENDING)
-  views           Int @default(0)
+  status            JobStatus @default(PENDING)
+  views             Int @default(0)
 
-  roles           Role[]
-  contractUsages  ContractUsage[]
+  roles             Role[]
+  contractUsages    ContractUsage[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@map("jobs")
 }
@@ -368,31 +377,40 @@ model Role {
   jobId             String
   job               Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  title             String
+  title             String?
   description       String?
   noOfCast          Int?
-  payment           RolePayment?
+
   ethnicity         String?
   ethnicityAll      Boolean @default(false)
   nationality       String?
   nationalityAll    Boolean @default(false)
-  languageSpoken    String?
-  dialectsSpoken    String?
+  languageSpoken    String?  // JSON array of language IDs
+  dialectsSpoken    String?  // JSON array of dialect IDs
   gender            String?
   ageMin            Int?
   ageMax            Int?
-  experience        String?
+  experience        String?  // JSON array e.g. ["Amature","Professional"]
   experienceAll     Boolean @default(false)
 
-  paymentInfo       String?  // Talent-only visibility
+  paymentInfo       String?
   paymentType       String?
   usage             String?
-  location          String?
-  country           String?
+
+  // Location where talent can apply from
+  locationCityId    String?
+  locationCity      City? @relation("RoleLocationCity", fields: [locationCityId], references: [id])
+  locationCountry   String?
+
+  // Questions
+  question1         String?
+  question2         String?
+  question3         String?
 
   requiredProfileVideo  Boolean @default(false)
   requiredCastingVideo  Boolean @default(false)
 
+  payment           RolePayment?
   applications      Application[]
 
   createdAt         DateTime @default(now())
@@ -645,8 +663,9 @@ model City {
 
   usersResidence  User[]
   talentResidence TalentProfile[]
-  jobsLocation    Job[] @relation
+  jobsCasting     Job[] @relation("CastingCity")
   jobsShooting    Job[] @relation("ShootingCity")
+  rolesLocation   Role[] @relation("RoleLocationCity")
 
   @@map("cities")
 }

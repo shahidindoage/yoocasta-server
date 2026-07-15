@@ -5,3 +5,5 @@ node_modules
 /generated/prisma
 
 transform.js
+
+fix-migration.js
