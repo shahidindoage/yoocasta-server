@@ -7,3 +7,5 @@ node_modules
 transform.js
 
 fix-migration.js
+
+test_jobs_routes.js
