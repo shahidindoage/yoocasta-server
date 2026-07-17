@@ -3,6 +3,21 @@ import { AuthRequest } from '../../middleware/auth.middleware';
 import * as jobService from './job.service';
 import { ApiResponse } from '../../utils/apiResponse';
 
+export const getPublicJobs = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const result = await jobService.getPublicJobs(req.query);
+    ApiResponse.success(res, result, 'Jobs fetched');
+  } catch (err) { next(err); }
+};
+
+export const getPublicJobById = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const jobId = req.params.jobId as string;
+    const result = await jobService.getPublicJobById(jobId);
+    ApiResponse.success(res, result, 'Job fetched');
+  } catch (err) { next(err); }
+};
+
 export const getFormOptions = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const result = await jobService.getFormOptions();

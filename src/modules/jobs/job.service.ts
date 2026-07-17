@@ -15,6 +15,106 @@ export const getFormOptions = async () => {
   return { categories, projectTypes, countries, cities, languages, dialects, ethnicities, nationalities };
 };
 
+// ─── Get Public Jobs (browse page) ──────────────────────────────
+export const getPublicJobs = async (query: any) => {
+  const {
+    categoryIds, countryIds, gender, ageFrom, ageTo,
+    paymentType, projectTypeId, languageIds, nationalityIds,
+    status, sort, page = '1', limit = '12',
+  } = query;
+
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 12));
+  const skip = (pageNum - 1) * limitNum;
+
+  const where: any = { status: 'APPROVED' };
+
+  if (status === 'expired') {
+    where.lastDateToApply = { lt: new Date() };
+  } else if (status === 'active') {
+    where.OR = [
+      { lastDateToApply: { gte: new Date() } },
+      { lastDateToApply: null },
+    ];
+  }
+
+  if (categoryIds) {
+    const ids = (Array.isArray(categoryIds) ? categoryIds : categoryIds.split(',')).filter(Boolean);
+    if (ids.length > 0) where.categoryId = { in: ids };
+  }
+
+  if (projectTypeId) {
+    where.projectTypeId = projectTypeId;
+  }
+
+  if (countryIds) {
+    const ids = (Array.isArray(countryIds) ? countryIds : countryIds.split(',')).filter(Boolean);
+    if (ids.length > 0) {
+      where.castingCity = { countryId: { in: ids } };
+    }
+  }
+
+  if (paymentType) {
+    where.paymentInfo = paymentType;
+  }
+
+  // Role-level filters
+  const roleFilters: any[] = [];
+  if (gender) roleFilters.push({ gender });
+  if (ageFrom) roleFilters.push({ ageMin: { lte: parseInt(ageFrom) } });
+  if (ageTo) roleFilters.push({ ageMax: { gte: parseInt(ageTo) } });
+  if (languageIds) {
+    const ids = (Array.isArray(languageIds) ? languageIds : languageIds.split(',')).filter(Boolean);
+    ids.forEach((id: string) => roleFilters.push({ languageSpoken: { contains: id } }));
+  }
+  if (nationalityIds) {
+    const ids = (Array.isArray(nationalityIds) ? nationalityIds : nationalityIds.split(',')).filter(Boolean);
+    ids.forEach((id: string) => roleFilters.push({ nationality: { contains: id } }));
+  }
+
+  if (roleFilters.length > 0) {
+    where.roles = { some: { AND: roleFilters } };
+  }
+
+  const orderBy: any = {};
+  switch (sort) {
+    case 'oldest': orderBy.createdAt = 'asc'; break;
+    case 'expiring_soon': orderBy.lastDateToApply = 'asc'; break;
+    case 'most_viewed': orderBy.views = 'desc'; break;
+    default: orderBy.createdAt = 'desc';
+  }
+
+  const [total, jobs] = await Promise.all([
+    prisma.job.count({ where }),
+    prisma.job.findMany({
+      where,
+      include: {
+        company: {
+          include: {
+            user: { select: { firstName: true, image: true, isVerified: true } },
+          }
+        },
+        category: true,
+        castingCity: { include: { country: true } },
+        roles: {
+          take: 1,
+          include: { payment: true },
+          orderBy: { createdAt: 'asc' },
+        },
+        _count: { select: { roles: true } },
+      },
+      orderBy,
+      skip,
+      take: limitNum,
+    }),
+  ]);
+
+  return {
+    data: jobs,
+    pagination: { total, page: pageNum, totalPages: Math.ceil(total / limitNum) },
+  };
+};
+
 // ─── Get Company Profile ───────────────────────────────────────
 const getCompanyProfile = async (userId: string) => {
   const company = await prisma.companyProfile.findUnique({ where: { userId } });
@@ -96,6 +196,61 @@ export const getMyJobs = async (userId: string) => {
   });
 };
 
+const resolveIdArrays = async (role: any) => {
+  const parseIds = (val: string | null | undefined): string[] => {
+    if (!val) return [];
+    try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; }
+    catch { return []; }
+  };
+
+  const [ethnicities, nationalities, languages, dialects] = await Promise.all([
+    prisma.ethnicity.findMany({ where: { id: { in: parseIds(role.ethnicity) } } }),
+    prisma.nationality.findMany({ where: { id: { in: parseIds(role.nationality) } } }),
+    prisma.language.findMany({ where: { id: { in: parseIds(role.languageSpoken) } } }),
+    prisma.dialect.findMany({ where: { id: { in: parseIds(role.dialectsSpoken) } } }),
+  ]);
+
+  return {
+    ...role,
+    ethnicityNames: ethnicities.map(e => e.name).join(', '),
+    nationalityNames: nationalities.map(n => n.name).join(', '),
+    languageNames: languages.map(l => l.name).join(', '),
+    dialectNames: dialects.map(d => d.name).join(', '),
+  };
+};
+
+// ─── Get Public Job By ID (increments views) ───────────────────
+export const getPublicJobById = async (jobId: string) => {
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      company: {
+        include: {
+          user: { select: { firstName: true, email: true, image: true, createdAt: true, isVerified: true } },
+          _count: { select: { jobs: true } },
+        }
+      },
+      category: true,
+      projectType: true,
+      castingCity: { include: { country: true } },
+      shootingCity: { include: { country: true } },
+      roles: {
+        include: { payment: true }
+      },
+    }
+  });
+  if (!job) throw { statusCode: 404, message: 'Job not found' };
+
+  const resolvedRoles = await Promise.all(job.roles.map(resolveIdArrays));
+
+  await prisma.job.update({
+    where: { id: jobId },
+    data: { views: { increment: 1 } },
+  });
+
+  return { ...job, roles: resolvedRoles, views: job.views + 1 };
+};
+
 // ─── Get Job By ID ─────────────────────────────────────────────
 export const getJobById = async (jobId: string) => {
   const job = await prisma.job.findUnique({
@@ -157,18 +312,27 @@ export const addRole = async (userId: string, jobId: string, data: any) => {
   const job = await prisma.job.findFirst({ where: { id: jobId, companyId: company.id } });
   if (!job) throw { statusCode: 404, message: 'Job not found' };
 
+  // Helper to stringify array fields; supports both old single string and new array format
+  const toJson = (val: any) => {
+    if (!val || (Array.isArray(val) && val.length === 0)) return null;
+    return typeof val === 'string' ? val : JSON.stringify(val);
+  };
+
+  const ethnicityAll = Array.isArray(data.ethnicityIds) ? data.ethnicityIds.includes('any') : (data.ethnicityAll || false);
+  const nationalityAll = Array.isArray(data.nationalityIds) ? data.nationalityIds.includes('any') : (data.nationalityAll || false);
+
   const role = await prisma.role.create({
     data: {
       jobId,
       title: data.title,
       description: data.description || null,
       noOfCast: data.noOfCast ? parseInt(data.noOfCast) : null,
-      ethnicity: data.ethnicityId || null,
-      ethnicityAll: data.ethnicityAll || false,
-      nationality: data.nationalityId || null,
-      nationalityAll: data.nationalityAll || false,
-      languageSpoken: data.languageIds ? JSON.stringify(data.languageIds) : null,
-      dialectsSpoken: data.dialectIds ? JSON.stringify(data.dialectIds) : null,
+      ethnicity: toJson(data.ethnicityIds) || data.ethnicityId || null,
+      ethnicityAll,
+      nationality: toJson(data.nationalityIds) || data.nationalityId || null,
+      nationalityAll,
+      languageSpoken: toJson(data.languageIds),
+      dialectsSpoken: toJson(data.dialectIds),
       gender: data.gender || null,
       ageMin: data.ageMin ? parseInt(data.ageMin) : null,
       ageMax: data.ageMax ? parseInt(data.ageMax) : null,
@@ -177,8 +341,8 @@ export const addRole = async (userId: string, jobId: string, data: any) => {
       paymentInfo: data.paymentInfo || null,
       paymentType: data.paymentType || null,
       usage: data.usage || null,
-      locationCityId: data.locationCityId || null,
-      locationCountry: data.locationCountry || null,
+      locationCityId: (data.locationCityIds && data.locationCityIds.length && !data.locationCityIds.includes('any')) ? data.locationCityIds[0] : (data.locationCityId || null),
+      locationCountry: toJson(data.locationCountryIds) || data.locationCountry || null,
       question1: data.question1 || null,
       question2: data.question2 || null,
       question3: data.question3 || null,
@@ -212,22 +376,32 @@ export const updateRole = async (userId: string, jobId: string, roleId: string, 
   const role = await prisma.role.findFirst({ where: { id: roleId, jobId } });
   if (!role) throw { statusCode: 404, message: 'Role not found' };
 
+  const toJsonU = (val: any) => {
+    if (!val || (Array.isArray(val) && val.length === 0)) return null;
+    return typeof val === 'string' ? val : JSON.stringify(val);
+  };
+  const ethnicityAllU = Array.isArray(data.ethnicityIds) ? data.ethnicityIds.includes('any') : (data.ethnicityAll || false);
+  const nationalityAllU = Array.isArray(data.nationalityIds) ? data.nationalityIds.includes('any') : (data.nationalityAll || false);
+
   await prisma.role.update({
     where: { id: roleId },
     data: {
       title: data.title,
       description: data.description || null,
       noOfCast: data.noOfCast ? parseInt(data.noOfCast) : null,
-      ethnicity: data.ethnicityId || null,
-      nationality: data.nationalityId || null,
-      languageSpoken: data.languageIds ? JSON.stringify(data.languageIds) : null,
-      dialectsSpoken: data.dialectIds ? JSON.stringify(data.dialectIds) : null,
+      ethnicity: toJsonU(data.ethnicityIds) || data.ethnicityId || null,
+      ethnicityAll: ethnicityAllU,
+      nationality: toJsonU(data.nationalityIds) || data.nationalityId || null,
+      nationalityAll: nationalityAllU,
+      languageSpoken: toJsonU(data.languageIds),
+      dialectsSpoken: toJsonU(data.dialectIds),
       gender: data.gender || null,
       ageMin: data.ageMin ? parseInt(data.ageMin) : null,
       ageMax: data.ageMax ? parseInt(data.ageMax) : null,
       experience: data.experience ? JSON.stringify(data.experience) : null,
       paymentType: data.paymentType || null,
-      locationCityId: data.locationCityId || null,
+      locationCityId: (data.locationCityIds && data.locationCityIds.length && !data.locationCityIds.includes('any')) ? data.locationCityIds[0] : (data.locationCityId || null),
+      locationCountry: toJsonU(data.locationCountryIds) || data.locationCountry || null,
       question1: data.question1 || null,
       question2: data.question2 || null,
       question3: data.question3 || null,

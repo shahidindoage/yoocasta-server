@@ -11,14 +11,18 @@ import {
   updateRole,
   deleteRole,
   getFormOptions,
+  getPublicJobById,
+  getPublicJobs,
 } from './job.controller';
 
 const router = Router();
 
-router.use(authenticate);
-
-// Form options (categories, cities, etc.)
+// Public routes (no auth required)
+router.get('/public', getPublicJobs);
+router.get('/public/:jobId', getPublicJobById);
 router.get('/options', getFormOptions);
+
+router.use(authenticate);
 
 // Job CRUD — Recruiter only
 router.post('/', authorize('RECRUITER'), createJob);

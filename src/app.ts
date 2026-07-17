@@ -7,6 +7,7 @@ import profileRoutes from './modules/profile/profile.routes';
 import talentRoutes from './modules/talent/talent.routes';
 import recruiterRoute from './modules/recruiter/recruiter.route';
 import jobRoutes from './modules/jobs/job.routes';
+import applicationRoutes from './modules/applications/application.routes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -45,6 +46,8 @@ app.use('/api/v1/talents', talentRoutes);
 app.use('/api/v1/recruiter', recruiterRoute);
 
 app.use('/api/v1/jobs', jobRoutes);
+
+app.use('/api/v1/applications', applicationRoutes);
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
