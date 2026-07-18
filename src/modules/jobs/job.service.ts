@@ -97,7 +97,6 @@ export const getPublicJobs = async (query: any) => {
         category: true,
         castingCity: { include: { country: true } },
         roles: {
-          take: 1,
           include: { payment: true },
           orderBy: { createdAt: 'asc' },
         },
