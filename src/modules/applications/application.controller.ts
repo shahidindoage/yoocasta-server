@@ -19,6 +19,14 @@ export const getMyApplications = async (req: AuthRequest, res: Response, next: N
   } catch (err) { next(err); }
 };
 
+export const getShortlistedForRole = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const roleId = req.params.roleId as string;
+    const result = await applicationService.getShortlistedForRole(req.user!.userId, roleId);
+    ApiResponse.success(res, result, 'Shortlisted applicants fetched');
+  } catch (err) { next(err); }
+};
+
 export const getJobApplications = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const jobId = req.params.jobId as string;

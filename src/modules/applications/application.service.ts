@@ -1,6 +1,8 @@
 import prisma from '../../config/db';
 import { sendEmail } from '../../config/email';
 
+const R2_BASE = process.env.R2_PUBLIC_URL as string;
+
 export const applyForRole = async (userId: string, roleId: string, formData: any) => {
   const role = await prisma.role.findUnique({ where: { id: roleId }, include: { job: true } });
   if (!role) throw { statusCode: 404, message: 'Role not found' };
@@ -45,8 +47,102 @@ export const getMyApplications = async (userId: string) => {
   });
 };
 
+export const getShortlistedForRole = async (userId: string, roleId: string) => {
+  const application = await prisma.application.findUnique({
+    where: { userId_roleId: { userId, roleId } },
+  });
+  if (!application) throw { statusCode: 403, message: 'You have not applied for this role' };
+
+  const role = await prisma.role.findUnique({
+    where: { id: roleId },
+    include: {
+      job: {
+        include: {
+          category: true,
+          company: { select: { companyName: true } },
+        },
+      },
+    },
+  });
+  if (!role) throw { statusCode: 404, message: 'Role not found' };
+
+  const shortlisted = await prisma.application.findMany({
+    where: { roleId, status: 'SHORTLISTED' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          image: true,
+          isVerified: true,
+          subscription: { select: { plan: { select: { name: true, slug: true } }, status: true } },
+          talentProfile: {
+            select: {
+              city: { select: { name: true, country: { select: { name: true } } } },
+              gender: true,
+              dob: true,
+              height: true,
+              weight: true,
+              chest: true,
+              waist: true,
+              shoeSize: true,
+              hairColor: true,
+              categories: { select: { category: { select: { name: true } } } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const calculateAge = (dob: Date | null | undefined): number | null => {
+    if (!dob) return null;
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+    return age;
+  };
+
+  return {
+    role: { id: role.id, title: role.title, gender: role.gender, ageMin: role.ageMin, ageMax: role.ageMax },
+    job: {
+      id: role.job.id,
+      title: role.job.title,
+      subTitle: role.job.subTitle,
+      category: role.job.category,
+      companyName: role.job.company.companyName,
+    },
+    totalShortlisted: shortlisted.length,
+    applicants: shortlisted.map(a => ({
+      id: a.user.id,
+      username: a.user.username,
+      firstName: a.user.firstName,
+      lastName: a.user.lastName,
+      image: a.user.image ? `${R2_BASE}/profile/${a.user.image}` : null,
+      isVerified: a.user.isVerified,
+      plan: a.user.subscription?.status === 'ACTIVE' ? a.user.subscription.plan.slug : null,
+      categories: a.user.talentProfile?.categories.map(c => c.category.name) || [],
+      city: a.user.talentProfile?.city?.name,
+      country: a.user.talentProfile?.city?.country?.name,
+      gender: a.user.talentProfile?.gender,
+      age: calculateAge(a.user.talentProfile?.dob),
+      physical: {
+        height: a.user.talentProfile?.height || null,
+        weight: a.user.talentProfile?.weight || null,
+        chest: a.user.talentProfile?.chest || null,
+        waist: a.user.talentProfile?.waist || null,
+        shoeSize: a.user.talentProfile?.shoeSize || null,
+        hairColor: a.user.talentProfile?.hairColor || null,
+      },
+    })),
+  };
+};
+
 export const getJobApplications = async (userId: string, jobId: string) => {
-  const R2_BASE = process.env.R2_PUBLIC_URL as string;
   const company = await prisma.companyProfile.findUnique({ where: { userId } });
   if (!company) throw { statusCode: 404, message: 'Company profile not found' };
 

@@ -20,6 +20,7 @@ export const getPublicJobs = async (query: any) => {
   const {
     categoryIds, countryIds, gender, ageFrom, ageTo,
     paymentType, projectTypeId, languageIds, nationalityIds,
+    ethnicityIds, dialectIds,
     status, sort, page = '1', limit = '12',
   } = query;
 
@@ -60,16 +61,50 @@ export const getPublicJobs = async (query: any) => {
 
   // Role-level filters
   const roleFilters: any[] = [];
-  if (gender) roleFilters.push({ gender });
-  if (ageFrom) roleFilters.push({ ageMin: { lte: parseInt(ageFrom) } });
-  if (ageTo) roleFilters.push({ ageMax: { gte: parseInt(ageTo) } });
+  if (gender) {
+    roleFilters.push({ OR: [{ gender: null }, { gender }, { gender: 'both' }] });
+  }
+  if (ageFrom) {
+    roleFilters.push({ OR: [{ ageMin: null }, { ageMin: { lte: parseInt(ageFrom) } }] });
+  }
+  if (ageTo) {
+    roleFilters.push({ OR: [{ ageMax: null }, { ageMax: { gte: parseInt(ageTo) } }] });
+  }
   if (languageIds) {
     const ids = (Array.isArray(languageIds) ? languageIds : languageIds.split(',')).filter(Boolean);
-    ids.forEach((id: string) => roleFilters.push({ languageSpoken: { contains: id } }));
+    roleFilters.push({
+      OR: [
+        { languageSpoken: null },
+        ...ids.map((id: string) => ({ languageSpoken: { contains: id } }))
+      ]
+    });
   }
   if (nationalityIds) {
     const ids = (Array.isArray(nationalityIds) ? nationalityIds : nationalityIds.split(',')).filter(Boolean);
-    ids.forEach((id: string) => roleFilters.push({ nationality: { contains: id } }));
+    roleFilters.push({
+      OR: [
+        { nationality: null },
+        ...ids.map((id: string) => ({ nationality: { contains: id } }))
+      ]
+    });
+  }
+  if (ethnicityIds) {
+    const ids = (Array.isArray(ethnicityIds) ? ethnicityIds : ethnicityIds.split(',')).filter(Boolean);
+    roleFilters.push({
+      OR: [
+        { ethnicity: null },
+        ...ids.map((id: string) => ({ ethnicity: { contains: id } }))
+      ]
+    });
+  }
+  if (dialectIds) {
+    const ids = (Array.isArray(dialectIds) ? dialectIds : dialectIds.split(',')).filter(Boolean);
+    roleFilters.push({
+      OR: [
+        { dialectsSpoken: null },
+        ...ids.map((id: string) => ({ dialectsSpoken: { contains: id } }))
+      ]
+    });
   }
 
   if (roleFilters.length > 0) {

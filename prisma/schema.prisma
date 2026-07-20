@@ -110,6 +110,8 @@ model User {
   castBagTalentOf       CastBagTalent[] @relation("CastBagTalentOf")
   castBagFeedbackOf     CastBagFeedback[] @relation("CastBagFeedbackOf")
   contractUsageTalentOf ContractUsageTalent[] @relation("ContractUsageTalentOf")
+  invitationsSent       Invitation[] @relation("InvitationRecruiter")
+  invitationsReceived   Invitation[] @relation("InvitationTalent")
 
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -317,6 +319,21 @@ model CompanyFavourite {
   @@map("company_favourites")
 }
 
+model Invitation {
+  id              String   @id @default(uuid())
+  recruiterId     String
+  recruiter       User     @relation("InvitationRecruiter", fields: [recruiterId], references: [id], onDelete: Cascade)
+  jobId           String
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  talentUserId    String
+  talent          User     @relation("InvitationTalent", fields: [talentUserId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime @default(now())
+
+  @@unique([jobId, talentUserId])
+  @@map("invitations")
+}
+
 // ================= JOBS & ROLES =================
 
 model Job {
@@ -365,6 +382,7 @@ model Job {
 
   roles             Role[]
   contractUsages    ContractUsage[]
+  invitations       Invitation[]
 
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

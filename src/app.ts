@@ -8,6 +8,9 @@ import talentRoutes from './modules/talent/talent.routes';
 import recruiterRoute from './modules/recruiter/recruiter.route';
 import jobRoutes from './modules/jobs/job.routes';
 import applicationRoutes from './modules/applications/application.routes';
+import favouriteRoutes from './modules/favourites/favourite.routes';
+import invitationRoutes from './modules/invitations/invitation.routes';
+import * as castBagController from './modules/recruiter/castBag.controller';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -48,6 +51,11 @@ app.use('/api/v1/recruiter', recruiterRoute);
 app.use('/api/v1/jobs', jobRoutes);
 
 app.use('/api/v1/applications', applicationRoutes);
+
+app.use('/api/v1/favourites', favouriteRoutes);
+app.use('/api/v1/invitations', invitationRoutes);
+
+app.get('/api/v1/cast-bags/public/:token', castBagController.getPublic);
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
