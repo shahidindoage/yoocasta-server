@@ -9,3 +9,5 @@ transform.js
 fix-migration.js
 
 test_jobs_routes.js
+
+migrate-blogs.js

@@ -782,3 +782,18 @@ model UserSubscription {
 
   @@map("user_subscriptions")
 }
+
+
+
+// ================= BLOGS =================
+
+model Blog {
+  id                    BigInt  @id @map("blog_id")
+  categoryCategoryId    BigInt? @map("category_category_id")
+  blogTitle             String? @map("blog_title")
+  blogDescription       String? @map("blog_description")
+  blogDate              String? @map("blog_date")
+  blogImage             String? @map("blog_image")
+
+  @@map("blogs")
+}

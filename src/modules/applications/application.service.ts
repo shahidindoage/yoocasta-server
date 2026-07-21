@@ -13,6 +13,23 @@ export const applyForRole = async (userId: string, roleId: string, formData: any
   });
   if (existing) throw { statusCode: 409, message: 'You have already applied for this role' };
 
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { subscription: { include: { plan: true } } },
+  });
+  const maxJobsPerMonth = user?.subscription?.plan?.maxJobsPerMonth ?? 1;
+  if (maxJobsPerMonth < 999) {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const monthCount = await prisma.application.count({
+      where: { userId, createdAt: { gte: startOfMonth } },
+    });
+    if (monthCount >= maxJobsPerMonth) {
+      throw { statusCode: 403, message: `You have reached your application limit (${maxJobsPerMonth}/month). Upgrade to Premium for unlimited applications.` };
+    }
+  }
+
   const talentProfile = await prisma.talentProfile.findUnique({ where: { userId } });
   if (!talentProfile) throw { statusCode: 404, message: 'Talent profile not found' };
 
