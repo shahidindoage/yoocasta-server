@@ -11,6 +11,8 @@ import applicationRoutes from './modules/applications/application.routes';
 import favouriteRoutes from './modules/favourites/favourite.routes';
 import invitationRoutes from './modules/invitations/invitation.routes';
 import blogRoutes from './modules/blogs/blog.routes';
+import planRoutes from './modules/plans/plan.routes';
+import contactRoutes from './modules/contact/contact.routes';
 import * as castBagController from './modules/recruiter/castBag.controller';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -56,6 +58,8 @@ app.use('/api/v1/applications', applicationRoutes);
 app.use('/api/v1/favourites', favouriteRoutes);
 app.use('/api/v1/invitations', invitationRoutes);
 app.use('/api/v1/blogs', blogRoutes);
+app.use('/api/v1/plans', planRoutes);
+app.use('/api/v1/contact', contactRoutes);
 
 app.get('/api/v1/cast-bags/public/:token', castBagController.getPublic);
 
